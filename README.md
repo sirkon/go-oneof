@@ -78,3 +78,5 @@ Some notes:
      func (*OperatorSum) isNode()
      ```
   in this example
+* This source file may have errors like reference to entities that do not exists. This allow a self reference before
+the first generation.
