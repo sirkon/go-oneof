@@ -23,8 +23,8 @@ package node
 type oneofNode struct {
     Value string
     OperatorSum struct {
-        Left  Node
-        Right Node
+        Left  *oneofNode
+        Right *oneofNode
     }
 }
 ```
