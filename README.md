@@ -41,8 +41,8 @@ package node
 type oneofNode struct {
 	Value       string
 	OperatorSum struct {
-		Left  Node
-		Right Node
+		Left  *oneofNode
+		Right *oneofNode
 	}
 }
 
@@ -78,5 +78,5 @@ Some notes:
      func (*OperatorSum) isNode()
      ```
   in this example
-* This source file may have errors like reference to entities that do not exists. This allow a self reference before
-the first generation.
+* This source file may have errors like reference to entities that do not exists. This may work for self reference, but
+the usage of `*oneofNode` (change to actual name) is preferable.

@@ -20,6 +20,10 @@ import (
 	"github.com/sirkon/message"
 )
 
+const (
+	oneofPrefix = "oneof"
+)
+
 func main() {
 	var args struct {
 		Pointer bool   `arg:"-p" help:"implement oneof interface over pointer to struct"`
@@ -51,6 +55,7 @@ func main() {
 	// look for `oneofXXX` strucute. It must be only one in the file at the top level
 	var def *ast.StructType
 	var name string
+	var origOneof bytes.Buffer
 	ast.Inspect(file, func(node ast.Node) bool {
 		switch v := node.(type) {
 		case *ast.File:
@@ -62,7 +67,6 @@ func main() {
 			if !ok {
 				return true
 			}
-			const oneofPrefix = "oneof"
 			if !strings.HasPrefix(v.Name.Name, oneofPrefix) {
 				return true
 			}
@@ -90,6 +94,12 @@ func main() {
 			if errCount > 0 {
 				message.Fatalf("cannot continue")
 			}
+			origOneof.WriteString(oneofPrefix)
+			origOneof.WriteString(name)
+			origOneof.WriteByte(' ')
+			if err := printer.Fprint(&origOneof, fset, newDef); err != nil {
+				message.Errorf("render original %s%s structure", oneofPrefix, name)
+			}
 			return true
 		default:
 			return true
@@ -116,6 +126,29 @@ func main() {
 		branchName := f.Names[0].Name
 		buf.WriteString(branchName)
 		buf.WriteByte(' ')
+		// now dive to a substruct to change
+		ast.Inspect(f.Type, func(node ast.Node) bool {
+			switch v := node.(type) {
+			case *ast.Field:
+				vv, ok := v.Type.(*ast.StarExpr)
+				if !ok {
+					return true
+				}
+				if vvv, ok := vv.X.(*ast.Ident); ok {
+					if vvv.Name == oneofPrefix+name {
+						obj := vvv.Obj
+						obj.Name = name
+						vv.X = &ast.Ident{
+							NamePos: vvv.NamePos,
+							Name:    name,
+							Obj:     obj,
+						}
+					}
+					v.Type = vv.X
+				}
+			}
+			return true
+		})
 		if err := printer.Fprint(&buf, fset, f.Type); err != nil {
 			message.Fatalf("rendering branch for field %s: %s", branchName, err)
 		}
@@ -165,9 +198,7 @@ func main() {
 			if vv, ok := v.Type.(*ast.StructType); ok && vv == def {
 				var buf bytes.Buffer
 				buf.WriteString("type ")
-				if err := printer.Fprint(&buf, fset, v); err != nil {
-					message.Fatalf("render %s: %s", v.Name.Name, err)
-				}
+				buf.Write(origOneof.Bytes())
 				dest.Rawl(buf.String())
 				dest.Newl()
 			}
