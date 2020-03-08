@@ -114,7 +114,7 @@ func main() {
 	var oo Collector
 
 	// render oneof interface
-	oo.Line(`// $0 an interface to limit available implementations to emulate discriminated union type`, name)
+	oo.Line(`// $0 is an interface to limit available implementations to partially replicate discriminated union type functionality`, name)
 	oo.Line(`type $0 interface {`, name)
 	oo.Line(`    is$0()`, name)
 	oo.Line(`}`)
@@ -130,22 +130,54 @@ func main() {
 		ast.Inspect(f.Type, func(node ast.Node) bool {
 			switch v := node.(type) {
 			case *ast.Field:
-				vv, ok := v.Type.(*ast.StarExpr)
-				if !ok {
-					return true
+				if subs := oneOfReference(name, v.Type); subs != nil {
+					v.Type = subs
+					return false
 				}
-				if vvv, ok := vv.X.(*ast.Ident); ok {
-					if vvv.Name == oneofPrefix+name {
-						obj := vvv.Obj
-						obj.Name = name
-						vv.X = &ast.Ident{
-							NamePos: vvv.NamePos,
-							Name:    name,
-							Obj:     obj,
+				ast.Inspect(v.Type, func(node ast.Node) bool {
+					switch v := node.(type) {
+					case *ast.FuncType:
+						var madeReplacement bool
+						for i, p := range v.Params.List {
+							if subs := oneOfReference(name, p.Type); subs != nil {
+								v.Params.List[i].Type = subs
+								madeReplacement = true
+							}
+						}
+						if v.Results == nil {
+							return !madeReplacement
+						}
+						for i, r := range v.Results.List {
+							if subs := oneOfReference(name, r.Type); subs != nil {
+								v.Results.List[i].Type = subs
+								madeReplacement = true
+							}
+						}
+						return !madeReplacement
+					case *ast.StarExpr:
+						if subs := oneOfReference(name, v.X); subs != nil {
+							v.X = subs
+							return false
+						}
+					case *ast.MapType:
+						var madeReplacement bool
+						if subs := oneOfReference(name, v.Key); subs != nil {
+							v.Key = subs
+							madeReplacement = true
+						}
+						if subs := oneOfReference(name, v.Value); subs != nil {
+							v.Value = subs
+							madeReplacement = true
+						}
+						return !madeReplacement
+					case *ast.ArrayType:
+						if subs := oneOfReference(name, v.Elt); subs != nil {
+							v.Elt = subs
+							return false
 						}
 					}
-					v.Type = vv.X
-				}
+					return true
+				})
 			}
 			return true
 		})
@@ -229,4 +261,24 @@ func main() {
 	if err := ioutil.WriteFile(args.FILE, res, 0644); err != nil {
 		message.Fatal(err)
 	}
+}
+
+// oneOfReference checks if this expression is oneof reference and returns its substitution. Returns nil otherwise
+func oneOfReference(name string, e ast.Expr) ast.Expr {
+	switch v := e.(type) {
+	case *ast.StarExpr:
+		switch vv := v.X.(type) {
+		case *ast.Ident:
+			if vv.Name == oneofPrefix+name {
+				obj := vv.Obj
+				obj.Name = name
+				return &ast.Ident{
+					NamePos: vv.NamePos,
+					Name:    name,
+					Obj:     obj,
+				}
+			}
+		}
+	}
+	return nil
 }
